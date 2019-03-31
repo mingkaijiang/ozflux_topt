@@ -34,3 +34,18 @@ vignettes/*.pdf
 
 # Shiny token, see https://shiny.rstudio.com/articles/shinyapps.html
 rsconnect/
+.Rproj.user
+
+# ignore all data
+*.csv
+*.nc
+*.txt
+*.xlsx
+
+#
+*.DS_Store
+
+# figures
+*.png
+*.pdf
+

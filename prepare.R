@@ -29,7 +29,8 @@ pacman::p_load(doBy,
                xts,
                lubridate,
                nnet,
-               sm)  
+               sm,
+               gridExtra)  
 
 
 #### Sourcing all R files in the modules subdirectory

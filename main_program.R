@@ -164,12 +164,6 @@ for (sitename in SiteName) {
     
     
     ### Make plots 
-    ##Plot temp vs. gpp site-model comparison
-    pdf(paste0("output/plots/",sitename,"_topt_subdaily.pdf"), width=6, height=10)
-    
-    par(mfrow=c(3,1),
-        mar = c(5.1,5.1,4.1,4.1))
-    
     x.lab <- expression("Tair (" * degree * "C" * ")")
     ifelse(sec.var == 1800,
            y.lab <- expression("GPP (g " * m^-2 * "30" * min^-1 * ")"),
@@ -181,36 +175,41 @@ for (sitename in SiteName) {
     ##Subset data to include only high PAR points
     newDF2 <- subset(newDF, SW > 500)
     
-    plot(newozGPP ~ Tair, data = newDF2, type = "p", ylab = y.lab, xlab = x.lab,
-         col = adjustcolor("grey", alpha = 0.1), pch = 16, main="GPP under high light")
+    #plot(newozGPP ~ Tair, data = newDF2, type = "p", ylab = y.lab, xlab = x.lab,
+    #     col = adjustcolor("grey", alpha = 0.1), pch = 16, main="GPP under high light")
     
     ####ozflux data manipulation
+    #lo <- smooth.spline(newDF2$Tair, newDF2$newozGPP, spar=0.05)
+    #lines(predict(lo), col='red', lwd=2)
+    plot1 <- ggplot(newDF2) + 
+        geom_point(aes(Tair,newozGPP), color=adjustcolor("lightblue", alpha = 0.3))+
+        geom_smooth(aes(Tair, newozGPP), method = gam, se=T, formula = y ~ splines::bs(x, 6), span=0.8) +
+        xlab(x.lab)+
+        ylab(y.lab)
+    
+    
     ##Using nls function
     p1 = 1
     p2 = 2
-    lo <- smooth.spline(newDF2$Tair, newDF2$newozGPP, spar=0.05)
-    lines(predict(lo), col='red', lwd=2)
-    qplot(newDF2$Tair,newDF2$newozGPP, geom='smooth', span =0.5)
-    
     fit <- nls(newozGPP ~ p1*Tair^2 + p2*Tair, start=list(p1=p1,p2=p2), data = newDF2, trace=T)
     new <- data.frame(Tair = seq(min(newDF2$Tair),max(newDF2$Tair), len = 200))
     #sum(resid(fit)^2)
     conf <- confint(fit)
     new$c25 <- conf[p1,"2.5%"] * (new$Tair)^2 + conf[p2,"2.5%"] * new$Tair
     new$c975 <- conf[p1,"97.5%"] * (new$Tair)^2 + conf[p2,"97.5%"] * new$Tair
-    polygon(c(rev(new$Tair), new$Tair), c(rev(new$c975), new$c25), col = 'grey80', border = NA)
-    lines(new$Tair,predict(fit, newdata=new), col = "black",lwd = 2)
-    lines(new$Tair, new$c25, col = "black", lty = 2, lwd = 2)
-    lines(new$Tair, new$c975, col = "black", lty = 2, lwd = 2)
-    
+    #polygon(c(rev(new$Tair), new$Tair), c(rev(new$c975), new$c25), col = 'grey80', border = NA)
+    #lines(new$Tair,predict(fit, newdata=new), col = "black",lwd = 2)
+    #lines(new$Tair, new$c25, col = "black", lty = 2, lwd = 2)
+    #lines(new$Tair, new$c975, col = "black", lty = 2, lwd = 2)
+    #
     predictions <- predict(fit, data = newDF2)
-    #points(newDF2$Tair, predictions, col = "black", pch = 16)
+    ##points(newDF2$Tair, predictions, col = "black", pch = 16)
     tmpDF <- as.data.frame(cbind(newDF2$Tair, predictions))
     colnames(tmpDF) <- c("Tair", "predictions")
     topt1 <- round(tmpDF[which(tmpDF$predictions == max(tmpDF$predictions)),1],1)
-    
-    legend("topright", c("OzFlux"), 
-           col = c("black"), pch = c(16,16))
+    #
+    #legend("topright", c("OzFlux"), 
+    #       col = c("black"), pch = c(16,16))
     
     ##bootstrap topt
     d <- as.data.frame(cbind(newDF2$Tair, newDF2$newozGPP))
@@ -231,9 +230,16 @@ for (sitename in SiteName) {
     topt.result <- do.call(rbind, lapply(1:500, topt))
     
     x.lab <- expression("Topt (" * degree * "C" * ")")
-    hist(topt.result, xlab = x.lab, main = "Bootstrapped Topt", col = "grey")
+    #hist(topt.result, xlab = x.lab, main = "Bootstrapped Topt", col = "grey")
     
     
+    topt.result.plot <- as.data.frame(topt.result)
+    
+    plot2 <- ggplot(data=topt.result.plot, aes(topt.result.plot$V1)) + 
+        geom_histogram(binwidth=0.25, fill="grey", color="black")+
+        xlab(x.lab)
+    
+
     ##Plot histogram 
     newDF2$Tair_box <- as.numeric(cut(newDF2$Tair, 5))
     
@@ -248,9 +254,23 @@ for (sitename in SiteName) {
     lab5 <- paste(round(min(newDF2[newDF2$Tair_box == 5, "Tair"]),1), "-",
                   round(max(newDF2[newDF2$Tair_box == 5, "Tair"]),1))
     
-    boxplot(newozGPP ~ Tair_box, data = newDF2, notch = T,
-            names=c(lab1,lab2,lab3,lab4,lab5), col = "grey",
-            xlab = x.lab, ylab = y.lab, main="Topt by bin")
+    #boxplot(newozGPP ~ Tair_box, data = newDF2, notch = T,
+    #        names=c(lab1,lab2,lab3,lab4,lab5), col = "grey",
+    #        xlab = x.lab, ylab = y.lab, main="Topt by bin")
+    
+    plot3 <- ggplot(newDF2, aes(Tair_box, newozGPP, group=Tair_box))+
+        geom_boxplot(fill="grey")+
+        scale_x_discrete(name=x.lab, limits=c(1,2,3,4,5),
+                         labels=c(lab1, lab2, lab3, lab4, lab4))+
+        ylab(y.lab)
+        
+    
+
+    ##Plot temp vs. gpp site-model comparison
+    pdf(paste0("output/plots/",sitename,"_topt_subdaily.pdf"), width=6, height=10)
+    
+    grid.arrange(plot1, plot2, plot3, 
+                 ncol = 1, nrow = 3)
     
     dev.off()
     

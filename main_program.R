@@ -145,134 +145,33 @@ for (sitename in SiteName) {
     newDF$Year <- year(newDF$Date)
     newDF$DOY <- yday(newDF$Date)
     newDF$HOD <- hour(newDF$Date)
-    
-    colnames(newDF) <- c("Date", "Lat","Lon", "Tair", "Rain",
+
+    colnames(newDF) <- c("DateTime", "Lat","Lon", "Tair", "Rain",
                          "SW", "ozGPP", "ozNEE", "ozLE", "ozTrans", "ozNEP",
                          "Year", "DOY", "HOD")
     
-    newDF <- as.data.frame(newDF, stringsAsFactors=F)
+    newDF$Date <- as.Date(as.character(gsub( "\\s.*", "", newDF$DateTime)))
     
     newDF$newozGPP <- newDF$ozGPP
     newDF$newozGPP <- ifelse(newDF$newozGPP < 0, 0, newDF$newozGPP)  
     
-    write.csv(newDF, paste0("output/processed_data/", sitename, "_processed.csv"))
+    ### calcualte daily total GPP
+    dDF <- summaryBy(newozGPP+ozNEE+ozNEP+ozTrans+Rain~Date+Year+DOY+Lat+Lon, data=newDF, FUN=sum,
+                     na.rm=T, keep.names=T)
+    tDF <- summaryBy(Tair+SW~Date, data=newDF, FUN=mean,
+                     na.rm=T, keep.names=T)
+    dDF$Tair <- tDF$Tair
+    dDF$SW <- tDF$SW
+    
+    mDF <- summaryBy(Tair~Date, data=newDF, FUN=max,
+                     na.rm=T, keep.names=T)
+    dDF$Tmax <- mDF$Tair
     
     
+    dDF <- dDF[,c("Lat", "Lon", "Date", "Year", "DOY", "Tair", "Tmax", "SW", "Rain", "newozGPP", "ozNEE", "ozNEP", "ozTrans")]
+    colnames(dDF) <- c("Lat", "Lon", "Date", "Year", "DOY", "Tair", "Tmax", "SW", "Rain", "GPP", "NEE", "NEP", "Trans")
     
-    
-    
-    
-    
-    ### Make plots 
-    x.lab <- expression("Tair (" * degree * "C" * ")")
-    ifelse(sec.var == 1800,
-           y.lab <- expression("GPP (g " * m^-2 * "30" * min^-1 * ")"),
-           y.lab <- expression("GPP (g " * m^-2 * hour^-1 * ")"))
-    
-    #plot(newozGPP ~ Tair, data = newDF, type = "p", ylab = y.lab, xlab = x.lab,
-    #     col = adjustcolor("grey", alpha=0.2), pch = 16)
-    
-    ##Subset data to include only high PAR points
-    newDF2 <- subset(newDF, SW > 500)
-    
-    #plot(newozGPP ~ Tair, data = newDF2, type = "p", ylab = y.lab, xlab = x.lab,
-    #     col = adjustcolor("grey", alpha = 0.1), pch = 16, main="GPP under high light")
-    
-    ####ozflux data manipulation
-    #lo <- smooth.spline(newDF2$Tair, newDF2$newozGPP, spar=0.05)
-    #lines(predict(lo), col='red', lwd=2)
-    plot1 <- ggplot(newDF2) + 
-        geom_point(aes(Tair,newozGPP), color=adjustcolor("lightblue", alpha = 0.3))+
-        geom_smooth(aes(Tair, newozGPP), method = gam, se=T, formula = y ~ splines::bs(x, 6), span=0.8) +
-        xlab(x.lab)+
-        ylab(y.lab)
-    
-    
-    ##Using nls function
-    p1 = 1
-    p2 = 2
-    fit <- nls(newozGPP ~ p1*Tair^2 + p2*Tair, start=list(p1=p1,p2=p2), data = newDF2, trace=T)
-    new <- data.frame(Tair = seq(min(newDF2$Tair),max(newDF2$Tair), len = 200))
-    #sum(resid(fit)^2)
-    conf <- confint(fit)
-    new$c25 <- conf[p1,"2.5%"] * (new$Tair)^2 + conf[p2,"2.5%"] * new$Tair
-    new$c975 <- conf[p1,"97.5%"] * (new$Tair)^2 + conf[p2,"97.5%"] * new$Tair
-    #polygon(c(rev(new$Tair), new$Tair), c(rev(new$c975), new$c25), col = 'grey80', border = NA)
-    #lines(new$Tair,predict(fit, newdata=new), col = "black",lwd = 2)
-    #lines(new$Tair, new$c25, col = "black", lty = 2, lwd = 2)
-    #lines(new$Tair, new$c975, col = "black", lty = 2, lwd = 2)
-    #
-    predictions <- predict(fit, data = newDF2)
-    ##points(newDF2$Tair, predictions, col = "black", pch = 16)
-    tmpDF <- as.data.frame(cbind(newDF2$Tair, predictions))
-    colnames(tmpDF) <- c("Tair", "predictions")
-    topt1 <- round(tmpDF[which(tmpDF$predictions == max(tmpDF$predictions)),1],1)
-    #
-    #legend("topright", c("OzFlux"), 
-    #       col = c("black"), pch = c(16,16))
-    
-    ##bootstrap topt
-    d <- as.data.frame(cbind(newDF2$Tair, newDF2$newozGPP))
-    colnames(d) <- c("Tair", "newozGPP")
-    
-    topt <- function(formula, data) 
-    {
-        newd <- d[sample(nrow(d), 500),]
-        fit = nls(newozGPP ~ p1*Tair^2 + p2*Tair, start=list(p1=p1,p2=p2), data = newd)
-        predictions <- predict(fit, data = newd)
-        tmpDF <- as.data.frame(cbind(newd$Tair, predictions))
-        colnames(tmpDF) <- c("Tair", "predictions")
-        topt1 <- round(tmpDF[which(tmpDF$predictions == max(tmpDF$predictions)),1],1)
-        return(topt1)
-        
-    } 
-    
-    topt.result <- do.call(rbind, lapply(1:500, topt))
-    
-    x.lab <- expression("Topt (" * degree * "C" * ")")
-    #hist(topt.result, xlab = x.lab, main = "Bootstrapped Topt", col = "grey")
-    
-    
-    topt.result.plot <- as.data.frame(topt.result)
-    
-    plot2 <- ggplot(data=topt.result.plot, aes(topt.result.plot$V1)) + 
-        geom_histogram(binwidth=0.25, fill="grey", color="black")+
-        xlab(x.lab)
-    
-
-    ##Plot histogram 
-    newDF2$Tair_box <- as.numeric(cut(newDF2$Tair, 5))
-    
-    lab1 <- paste(round(min(newDF2[newDF2$Tair_box == 1, "Tair"]),1), "-",
-                  round(max(newDF2[newDF2$Tair_box == 1, "Tair"]),1))
-    lab2 <- paste(round(min(newDF2[newDF2$Tair_box == 2, "Tair"]),1), "-",
-                  round(max(newDF2[newDF2$Tair_box == 2, "Tair"]),1))
-    lab3 <- paste(round(min(newDF2[newDF2$Tair_box == 3, "Tair"]),1), "-",
-                  round(max(newDF2[newDF2$Tair_box == 3, "Tair"]),1))
-    lab4 <- paste(round(min(newDF2[newDF2$Tair_box == 4, "Tair"]),1), "-",
-                  round(max(newDF2[newDF2$Tair_box == 4, "Tair"]),1))
-    lab5 <- paste(round(min(newDF2[newDF2$Tair_box == 5, "Tair"]),1), "-",
-                  round(max(newDF2[newDF2$Tair_box == 5, "Tair"]),1))
-    
-    #boxplot(newozGPP ~ Tair_box, data = newDF2, notch = T,
-    #        names=c(lab1,lab2,lab3,lab4,lab5), col = "grey",
-    #        xlab = x.lab, ylab = y.lab, main="Topt by bin")
-    
-    plot3 <- ggplot(newDF2, aes(Tair_box, newozGPP, group=Tair_box))+
-        geom_boxplot(fill="grey")+
-        scale_x_discrete(name=x.lab, limits=c(1,2,3,4,5),
-                         labels=c(lab1, lab2, lab3, lab4, lab4))+
-        ylab(y.lab)
-        
-    
-
-    ##Plot temp vs. gpp site-model comparison
-    pdf(paste0("output/plots/",sitename,"_topt_subdaily.pdf"), width=6, height=10)
-    
-    grid.arrange(plot1, plot2, plot3, 
-                 ncol = 1, nrow = 3)
-    
-    dev.off()
+    write.csv(dDF, paste0("output/processed_data/", sitename, "_processed.csv"))
     
 }   
 
@@ -281,184 +180,164 @@ for (sitename in SiteName) {
 
 
 ####################################################
-##Check dry vs. wet relationship at monthly timestep meteorological data
+## make basic plots
+set.seeds(1234)
 
-for (sitename in SiteName)
-{
-
+for (sitename in SiteName) {
+    ### read in data
     newDF <- read.csv(paste0("output/processed_data/", sitename, "_processed.csv"))
     
-    newDF$month <- as.numeric(format(as.Date(newDF$Date), "%m"))
-    newDF$month <- month(as.Date(newDF$Date))
+    ### only fit data to every 1 degree temperature range
+    ### and the 90th percentile within this bin
+    v.max <- round(max(newDF$Tmax),0)-1
+    v.min <- round(min(newDF$Tmax),0)
     
-    pdf(paste0("output/plots/",sitename,"_topt_wetdry_monthly_rainfall.pdf"))
+    ## artifically create a range of 1 degree temperature to hold the data
+    aDF <- data.frame(c(v.min:v.max), NA, NA, NA)
+    colnames(aDF) <- c("temp", "fifth", "nintyfifth", "samplesize")
     
+    ### store gpp values 90th percentile
+    for (i in aDF$temp) {
+        vmax <- aDF$temp[aDF$temp==i] +1
+        vmin <- aDF$temp[aDF$temp==i]
+        test <- subset(newDF, Tmax >= vmin & Tmax < vmax)
+        qt <- quantile(test$GPP, probs = c(0.05, 0.95))
+        
+        aDF$fifth[aDF$temp==i] <- qt[1]
+        aDF$nintyfifth[aDF$temp==i] <- qt[2]
+        aDF$samplesize[aDF$temp==i] <- length(test$Tmax)
+    }
+    
+    outDF2 <- c()
+    
+    for (i in aDF$temp) {
+        vmax <- aDF$temp[aDF$temp==i] +1
+        vmin <- aDF$temp[aDF$temp==i]
+        gmin <- aDF$fifth[aDF$temp==i]
+        gmax <- aDF$nintyfifth[aDF$temp==i]
+        
+        outDF <- subset(newDF, Tmax >= vmin & Tmax < vmax & GPP >= gmin & GPP < gmax)
+        outDF2 <- rbind(outDF2, outDF)
+    }
+    
+    ### assign tmax bin
+    outDF2$Tmax_bin <- round(outDF2$Tmax,0)
+    newDF <- outDF2
+    rm(outDF2)
+
+    
+    ### Make plots 
+    x.lab <- expression("Tair (" * degree * "C" * ")")
+    y.lab <- expression("GPP (g " * m^-2 * d^-1 * ")")
+
+    
+    ##Plot temp vs. gpp site-model comparison
+    pdf(paste0("output/plots/",sitename,"_topt_subdaily.pdf"), width=6, height=10)
     par(mfrow=c(2,1),
         mar = c(5.1,5.1,4.1,4.1))
     
-    ##wet month definition: monthly prec > 75th percentile
-    short.date <- strftime(newDF$Date, "%Y/%m")
-    prec.monthly <- aggregate(newDF$Rain ~ short.date, FUN = sum)
-    prec.monthly <- as.data.frame(prec.monthly)
-    colnames(prec.monthly) <- c("Date","Prec")
-    precDF <- ts(prec.monthly$Prec, frequency = 12, start = min(newDF$Year))
+    #plot1 <- ggplot(newDF) + 
+    #    geom_point(aes(Tmax_bin,GPP), color=adjustcolor("lightblue", alpha = 0.3))+
+    #    geom_smooth(aes(Tmax_bin, GPP), method = gam, se=T, formula = y ~ splines::bs(x, 3), span=0.8) +
+    #    xlab(x.lab)+
+    #    ylab(y.lab)
+    #
+    #plot(plot1)
     
-    plot(as.xts(precDF), major.format = "%Y/%m", xlab = "Date",
-         ylab = "Rainfall (mm/mon)", main = "Monthly rainfall")
-    
-    wet_def <- quantile(precDF, 0.75)
-    abline(h = wet_def, col = "red", lwd = 1.5, lty = 2)
-    legend("topright", legend = "75th percentile", col = "red", lty = 2,
-           lwd = 2)
-    
- 
-    ####################################################
-    ##Check dry vs. wet relationship at monthly timestep
-    
-    ##Wet period data extraction
-    wet_date <- subset(prec.monthly, Prec >= wet_def)
-    tmp <- strsplit(wet_date$Date, "/")
-    wet_date <- as.data.frame(do.call(rbind, tmp),stringsAsFactors=F)
-    colnames(wet_date) <- c("Year","Month")
-    wet_date$Year <- as.numeric(wet_date$Year)
-    wet_date$Month <- as.numeric(wet_date$Month)
-    
-    #newDF$month <- round(as.numeric(format(newDF$Date, "%m")),0)
-    
-    wet_period <- subset(newDF, Year == wet_date[1,1] & month == wet_date[1,2])
-    d.length <- length(wet_period$Year)
-    
-    for (i in 2:length(wet_date$Year))
-    {
-        tmpDF <- subset(newDF, Year == wet_date[i,1] & month == wet_date[i,2])
-        wet_period <- rbind(wet_period, tmpDF)
-    }
-    
-    
-    ##Dry period data extraction
-    dry_date <- subset(prec.monthly, Prec < wet_def)
-    tmp <- strsplit(dry_date$Date, "/")
-    dry_date <- as.data.frame(do.call(rbind, tmp),stringsAsFactors=F)
-    colnames(dry_date) <- c("Year","Month")
-    dry_date$Year <- as.numeric(dry_date$Year)
-    dry_date$Month <- as.numeric(dry_date$Month)
-    
-    dry_period <- subset(newDF, Year == dry_date[1,1] & month == dry_date[1,2])
-    d.length <- length(dry_period$Year)
-    
-    for (i in 2:length(dry_date$Year))
-    {
-        tmpDF <- subset(newDF, Year == dry_date[i,1] & month == dry_date[i,2])
-        dry_period <- rbind(dry_period, tmpDF)
-    }
-    
-    
-    ##Define high light condition  
-    dryDF <- subset(dry_period, SW > 500)
-    wetDF <- subset(wet_period, SW > 500)
-
-    
-    ##################### Plot monthly comparison #############################
-    
-    pdf(paste(getwd(), "/output_analyses/",sitename,"_topt_wetdry_monthly.pdf",sep=""))
-    
-    par(mfrow=c(2,2),
-        mar=c(5.1,5.1,4.1,4.1))
-    
-    ############################## dry periods ################################
-    plot(newozGPP ~ Tair, data = dryDF, type = "p", ylab = y.lab, xlab = x.lab,
-         ylim = c(v.low,v.high), col = adjustcolor("grey", alpha = 0.1), pch = 16, main = "Dry periods")
-
-    ####ozflux data manipulation
+    ## Using nls function
     p1 = 1
     p2 = 2
-    fit <- nls(newozGPP ~ p1*Tair^2 + p2*Tair, start=list(p1=p1,p2=p2), data = dryDF, trace=T)
-    new <- data.frame(Tair = seq(min(dryDF$Tair),max(dryDF$Tair), len = 200))
+    fit <- nls(GPP ~ p1*Tmax_bin^2 + p2*Tmax_bin, start=list(p1=p1,p2=p2), data = newDF, trace=T)
+    new <- data.frame(Tmax_bin = seq(min(newDF$Tmax_bin),max(newDF$Tmax_bin), len = 200))
+    #sum(resid(fit)^2)
     conf <- confint(fit)
-    new$c25 <- conf[p1,"2.5%"] * (new$Tair)^2 + conf[p2,"2.5%"] * new$Tair
-    new$c975 <- conf[p1,"97.5%"] * (new$Tair)^2 + conf[p2,"97.5%"] * new$Tair
-    polygon(c(rev(new$Tair), new$Tair), c(rev(new$c975), new$c25), col = 'grey80', border = NA)
-    lines(new$Tair,predict(fit, newdata=new), col = "black",lwd = 2)
-    lines(new$Tair, new$c25, col = "black", lty = 2, lwd = 2)
-    lines(new$Tair, new$c975, col = "black", lty = 2, lwd = 2)
+    new$c25 <- conf[p1,"2.5%"] * (new$Tmax_bin)^2 + conf[p2,"2.5%"] * new$Tmax_bin
+    new$c975 <- conf[p1,"97.5%"] * (new$Tmax_bin)^2 + conf[p2,"97.5%"] * new$Tmax_bin
     
- 
+    plot(GPP ~ Tmax_bin, data = newDF, type = "p", ylab = y.lab, xlab = x.lab,
+         col = adjustcolor("grey", alpha = 0.3), pch = 16)
+    polygon(c(rev(new$Tmax_bin), new$Tmax_bin), c(rev(new$c975), new$c25), col = 'grey80', border = NA)
+    lines(new$Tmax,predict(fit, newdata=new), col = "black",lwd = 2)
+    lines(new$Tmax, new$c25, col = "black", lty = 2, lwd = 2)
+    lines(new$Tmax, new$c975, col = "black", lty = 2, lwd = 2)
+    
+    predictions <- predict(fit, data = newDF)
+    # points(newDF$Tmax, predictions, col = "black", pch = 16)
+    tmpDF <- as.data.frame(cbind(newDF$Tmax_bin, predictions))
+    colnames(tmpDF) <- c("Tmax_bin", "predictions")
+    topt1 <- round(tmpDF[which(tmpDF$predictions == max(tmpDF$predictions)),1],1)
+    
     legend("topright", c("OzFlux"), 
            col = c("black"), pch = c(16,16))
     
-    ############################## wet periods ################################
-    plot(newozGPP ~ Tair, data = wetDF, type = "p", ylab = y.lab, xlab = x.lab,
-         ylim = c(v.low,v.high), col = adjustcolor("grey", alpha = 0.2), pch = 16, main = "Wet periods")
-    points(wetDF$Tair, wetDF$gdayGPP, col = adjustcolor("lightgreen", alpha = 0.2), pch = 16)
+    ##bootstrap topt
+    d <- as.data.frame(cbind(newDF$Tmax_bin, newDF$GPP))
+    colnames(d) <- c("Tmax_bin", "GPP")
     
-    ####ozflux data manipulation
-    p1 = 1
-    p2 = 2
-    fit <- nls(newozGPP ~ p1*Tair^2 + p2*Tair, start=list(p1=p1,p2=p2), data = wetDF, trace=T)
-    new <- data.frame(Tair = seq(min(wetDF$Tair),max(wetDF$Tair), len = 200))
-    conf <- confint(fit)
-    new$c25 <- conf[p1,"2.5%"] * (new$Tair)^2 + conf[p2,"2.5%"] * new$Tair
-    new$c975 <- conf[p1,"97.5%"] * (new$Tair)^2 + conf[p2,"97.5%"] * new$Tair
-    polygon(c(rev(new$Tair), new$Tair), c(rev(new$c975), new$c25), col = 'grey80', border = NA)
-    lines(new$Tair,predict(fit, newdata=new), col = "black",lwd = 2)
-    lines(new$Tair, new$c25, col = "black", lty = 2, lwd = 2)
-    lines(new$Tair, new$c975, col = "black", lty = 2, lwd = 2)
-    
-
-    legend("topright", c("OzFlux"), 
-           col = c("black"), pch = c(16,16))
-    
-    
-    ############################## dry periods ################################
-    d <- as.data.frame(cbind(dryDF$Tair, dryDF$newozGPP))
-    colnames(d) <- c("Tair", "newozGPP")
-    
-    topt <- function(formula, data) 
-    {
-        newd <- d[sample(nrow(d), 50),]
-        fit = nls(newozGPP ~ p1*Tair^2 + p2*Tair, start=list(p1=p1,p2=p2), data = newd)
+    topt <- function(formula, data) {
+        newd <- d[sample(nrow(d), 500),]
+        fit = nls(GPP ~ p1*Tmax_bin^2 + p2*Tmax_bin, start=list(p1=p1,p2=p2), data = newd)
         predictions <- predict(fit, data = newd)
-        tmpDF <- as.data.frame(cbind(newd$Tair, predictions))
-        colnames(tmpDF) <- c("Tair", "predictions")
+        tmpDF <- as.data.frame(cbind(newd$Tmax_bin, predictions))
+        colnames(tmpDF) <- c("Tmax_bin", "predictions")
         topt1 <- round(tmpDF[which(tmpDF$predictions == max(tmpDF$predictions)),1],1)
         return(topt1)
+        
     } 
     
-    topt.result1 <- do.call(rbind, lapply(1:50, topt))
-    topt.result1 <- as.data.frame(topt.result1[,1])
-    topt.result1$group <- 1
-    colnames(topt.result1) <- c("topt","group")
+    topt.result <- do.call(rbind, lapply(1:500, topt))
     
-    ############################## wet periods ################################
-    d <- as.data.frame(cbind(wetDF$Tair, wetDF$newozGPP))
-    colnames(d) <- c("Tair", "newozGPP")
-    
-    topt <- function(formula, data) 
-    {
-        newd <- d[sample(nrow(d), 50),]
-        fit = nls(newozGPP ~ p1*Tair^2 + p2*Tair, start=list(p1=p1,p2=p2), data = newd)
-        predictions <- predict(fit, data = newd)
-        tmpDF <- as.data.frame(cbind(newd$Tair, predictions))
-        colnames(tmpDF) <- c("Tair", "predictions")
-        topt1 <- round(tmpDF[which(tmpDF$predictions == max(tmpDF$predictions)),1],1)
-        return(topt1)
-    } 
-    
-    topt.result2 <- do.call(rbind, lapply(1:50, topt))
-    topt.result2 <- as.data.frame(topt.result1[,2])
-    topt.result2$group <- 2
-    colnames(topt.result2) <- c("topt","group")
-    
-    #### plot
-    topt.result <- rbind(topt.result1, topt.result2)
     x.lab <- expression("Topt (" * degree * "C" * ")")
-    sm.density.compare(topt.result$topt, xlab = x.lab, 
-                       group = topt.result$group, col = c("red2", "blue3"),
-                       lty = c(2,1), lwd = 2)
-    legend("topright", c("dry", "wet"), lwd = 2, lty = c(2,1),
-           col=c("red2","blue3"))
+    hist(topt.result, xlab = x.lab, main = "Bootstrapped Topt", col = "grey")
     
-    dev.off()  
     
-} 
+    #topt.result.plot <- as.data.frame(topt.result)
+    
+    #plot2 <- ggplot(data=topt.result.plot, aes(topt.result.plot$V1)) + 
+    #    geom_histogram(binwidth=1.0, fill="grey", color="black")+
+    #    xlab(x.lab)
+    
+    #plot(plot2)
+    
+    ###Plot histogram 
+    #newDF$Tmax_box <- as.numeric(cut(newDF$Tmax, 5))
+    #
+    #lab1 <- paste(round(min(newDF[newDF$Tmax_box == 1, "Tmax"]),1), "-",
+    #              round(max(newDF[newDF$Tmax_box == 1, "Tmax"]),1))
+    #lab2 <- paste(round(min(newDF[newDF$Tmax_box == 2, "Tmax"]),1), "-",
+    #              round(max(newDF[newDF$Tmax_box == 2, "Tmax"]),1))
+    #lab3 <- paste(round(min(newDF[newDF$Tmax_box == 3, "Tmax"]),1), "-",
+    #              round(max(newDF[newDF$Tmax_box == 3, "Tmax"]),1))
+    #lab4 <- paste(round(min(newDF[newDF$Tmax_box == 4, "Tmax"]),1), "-",
+    #              round(max(newDF[newDF$Tmax_box == 4, "Tmax"]),1))
+    #lab5 <- paste(round(min(newDF[newDF$Tmax_box == 5, "Tmax"]),1), "-",
+    #              round(max(newDF[newDF$Tmax_box == 5, "Tmax"]),1))
+    #
+    #boxplot(GPP ~ Tmax_box, data = newDF, notch = T,
+    #        names=c(lab1,lab2,lab3,lab4,lab5), col = "grey",
+    #        xlab = x.lab, ylab = y.lab, main="Topt by bin")
+    
+    #plot3 <- ggplot(newDF2, aes(Tair_box, newozGPP, group=Tair_box))+
+    #    geom_boxplot(fill="grey")+
+    #    scale_x_discrete(name=x.lab, limits=c(1,2,3,4,5),
+    #                     labels=c(lab1, lab2, lab3, lab4, lab4))+
+    #    ylab(y.lab)
+    
+    
+    #grid.arrange(plot1, plot2, plot3, 
+    #             ncol = 1, nrow = 3)
+    
+    dev.off()
+    
+}
+
+
+#### To do list:
+### 1. fiure out what function to use to fit the temperature response function
+### 2. hourly data subtraction
+### 3. consistent plot with x-axis - possibly with ggplot
+### 4. go through B's list
+
+
+
 

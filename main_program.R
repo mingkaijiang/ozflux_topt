@@ -55,7 +55,8 @@ G <- 1
 ##############################################################################
 
 ifelse(G == 1,
-       SiteName <- c("Calperum","CapeTribulation","CowBay","CumberlandPlains",
+       SiteName <- c("Calperum",#"CapeTribulation",
+                     "CowBay","CumberlandPlains",
                      "DryRiver","Gingin","Whroo","WombatStateForest"),
        SiteName <- c("GreatWesternWoodlands","HowardSprings"))
 
@@ -181,7 +182,7 @@ for (sitename in SiteName) {
 
 ####################################################
 ## make basic plots
-set.seeds(1234)
+set.seed(1234)
 
 for (sitename in SiteName) {
     ### read in data
